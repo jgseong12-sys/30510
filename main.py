@@ -1,278 +1,370 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(
-    page_title="2인용 탑다운 슈팅 게임",
-    layout="wide"
-)
+st.set_page_config(page_title="2인용 1대1 슈팅 게임", layout="wide")
 
 st.title("🎮 2인용 1대1 탑다운 슈팅 게임")
 
-st.write("""
-**P1**: WASD 이동 / IJKL 조준 / F 발사  
-**P2**: 방향키 이동 / 숫자패드 8·4·5·6 조준 / Enter 발사  
-먼저 맵의 무기를 획득하고 상대 HP를 0으로 만들면 승리!
-""")
+st.info(
+    "게임 화면을 먼저 한 번 클릭한 뒤 플레이하세요! "
+    "P1: WASD 이동 / IJKL 조준 / F 발사 | "
+    "P2: 방향키 이동 / 8456 조준 / Enter 발사"
+)
 
 game_html = """
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="UTF-8">
+
 <style>
-    * {
-        box-sizing: border-box;
-    }
+html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #202020;
+}
 
-    body {
-        margin: 0;
-        overflow: hidden;
-        background: #222;
-        font-family: Arial, sans-serif;
-    }
-
-    canvas {
-        display: block;
-        margin: auto;
-        background: #4f913f;
-        border: 4px solid #111;
-    }
+#gameCanvas {
+    display: block;
+    margin: 0 auto;
+    background: #4f913f;
+    border: 4px solid #111;
+    outline: none;
+}
 </style>
 </head>
 
 <body>
 
-<canvas id="gameCanvas" width="1200" height="750"></canvas>
+<canvas
+    id="gameCanvas"
+    width="1200"
+    height="760"
+    tabindex="0">
+</canvas>
 
 <script>
+
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-const W = canvas.width;
-const H = canvas.height;
+const SCREEN_W = canvas.width;
+const SCREEN_H = canvas.height;
 
-const WORLD_W = 2400;
-const WORLD_H = 1600;
+const WORLD_W = 3000;
+const WORLD_H = 2200;
 
-const keys = {};
+let keys = {};
 
-window.addEventListener("keydown", function(e) {
-    keys[e.key] = true;
+canvas.focus();
 
-    const blockedKeys = [
-        "ArrowUp", "ArrowDown",
-        "ArrowLeft", "ArrowRight",
-        " "
+
+/* =====================================
+   키 입력
+===================================== */
+
+window.addEventListener("keydown", (event) => {
+
+    const blocked = [
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        " ",
+        "Enter"
     ];
 
-    if (blockedKeys.includes(e.key)) {
-        e.preventDefault();
+    if (blocked.includes(event.key)) {
+        event.preventDefault();
     }
 
+    keys[event.key] = true;
+
     if (!gameOver) {
-        if (e.key === "f" || e.key === "F") {
+
+        if (event.key === "f" || event.key === "F") {
             shoot(p1);
         }
 
-        if (e.key === "Enter") {
+        if (event.key === "Enter") {
             shoot(p2);
         }
     }
 
-    if (gameOver && (e.key === "r" || e.key === "R")) {
+    if (
+        gameOver &&
+        (event.key === "r" || event.key === "R")
+    ) {
         restartGame();
     }
 });
 
-window.addEventListener("keyup", function(e) {
-    keys[e.key] = false;
+
+window.addEventListener("keyup", (event) => {
+
+    keys[event.key] = false;
+
 });
 
 
-/* =========================
-   플레이어
-========================= */
+canvas.addEventListener("click", () => {
+    canvas.focus();
+});
+
+
+/* =====================================
+   플레이어 생성
+===================================== */
 
 function createPlayer(x, y, color, name) {
+
     return {
+
         x: x,
         y: y,
+
         color: color,
         name: name,
 
         radius: 24,
-        speed: 4.5,
+
+        speed: 5,
 
         hp: 100,
+
         hasWeapon: false,
 
         aimX: 1,
         aimY: 0,
 
-        shootTimer: 0
+        cooldown: 0
+
     };
+
 }
 
+
 let p1 = createPlayer(
-    150,
-    150,
-    "#f5d52a",
+    300,
+    300,
+    "#f4d03f",
     "P1"
 );
 
+
 let p2 = createPlayer(
-    2200,
-    1400,
-    "#3d8cff",
+    2700,
+    1900,
+    "#3498db",
     "P2"
 );
 
 
-/* =========================
+/* =====================================
    구조물
-========================= */
+===================================== */
 
 const obstacles = [];
 
 function addObstacle(x, y, w, h, type) {
+
     obstacles.push({
-        x, y, w, h, type
+        x: x,
+        y: y,
+        w: w,
+        h: h,
+        type: type
     });
+
 }
 
 
-/* ===== 집 ===== */
+/* ===== P1 주변 집 ===== */
 
-addObstacle(250, 180, 400, 35, "wall");
-addObstacle(250, 180, 35, 300, "wall");
-addObstacle(615, 180, 35, 300, "wall");
+addObstacle(400, 200, 500, 40, "houseWall");
+addObstacle(400, 200, 40, 350, "houseWall");
+addObstacle(860, 200, 40, 350, "houseWall");
 
-addObstacle(250, 445, 150, 35, "wall");
-addObstacle(500, 445, 150, 35, "wall");
+addObstacle(400, 510, 180, 40, "houseWall");
+addObstacle(700, 510, 200, 40, "houseWall");
 
-addObstacle(340, 260, 110, 55, "crate");
-addObstacle(500, 330, 70, 70, "crate");
-
-
-/* ===== 창고 ===== */
-
-addObstacle(1550, 950, 500, 40, "wall");
-addObstacle(1550, 950, 40, 350, "wall");
-addObstacle(2010, 950, 40, 350, "wall");
-
-addObstacle(1550, 1260, 190, 40, "wall");
-addObstacle(1850, 1260, 200, 40, "wall");
-
-addObstacle(1650, 1040, 90, 90, "crate");
-addObstacle(1850, 1080, 120, 70, "crate");
-addObstacle(1720, 1180, 80, 60, "crate");
+addObstacle(520, 300, 100, 60, "crate");
+addObstacle(700, 350, 100, 100, "crate");
 
 
-/* ===== 콘크리트 엄폐물 ===== */
+/* ===== 중앙 엄폐물 ===== */
 
-addObstacle(900, 600, 350, 45, "concrete");
-addObstacle(900, 600, 45, 200, "concrete");
+addObstacle(1200, 500, 400, 50, "concrete");
+addObstacle(1200, 500, 50, 250, "concrete");
 
-addObstacle(1200, 350, 300, 45, "concrete");
-addObstacle(1455, 350, 45, 200, "concrete");
+addObstacle(1700, 700, 400, 50, "concrete");
+addObstacle(2050, 700, 50, 250, "concrete");
 
-addObstacle(650, 1050, 45, 250, "concrete");
-addObstacle(650, 1255, 250, 45, "concrete");
+addObstacle(900, 1100, 50, 300, "concrete");
+addObstacle(900, 1350, 350, 50, "concrete");
 
 
-/* ===== 자동차 ===== */
+/* ===== 중앙 자동차 ===== */
 
-addObstacle(1100, 820, 170, 80, "car");
-addObstacle(1350, 820, 170, 80, "car");
+addObstacle(1300, 900, 190, 85, "car");
+addObstacle(1600, 900, 190, 85, "car");
+
+
+/* ===== P2 주변 창고 ===== */
+
+addObstacle(2200, 1500, 500, 45, "houseWall");
+addObstacle(2200, 1500, 45, 400, "houseWall");
+addObstacle(2655, 1500, 45, 400, "houseWall");
+
+addObstacle(2200, 1855, 180, 45, "houseWall");
+addObstacle(2500, 1855, 200, 45, "houseWall");
+
+addObstacle(2320, 1620, 120, 100, "crate");
+addObstacle(2500, 1700, 120, 80, "crate");
 
 
 /* ===== 나무 ===== */
 
 const trees = [
+
     [100, 800],
-    [170, 850],
-    [240, 780],
+    [200, 850],
+    [300, 900],
+    [150, 1000],
 
-    [2150, 300],
-    [2250, 360],
-    [2300, 260],
+    [500, 1600],
+    [600, 1650],
+    [700, 1700],
 
-    [350, 1300],
-    [450, 1350],
-    [520, 1280]
+    [2500, 300],
+    [2650, 350],
+    [2800, 250],
+
+    [2700, 1100],
+    [2800, 1200]
+
 ];
 
 for (const t of trees) {
-    addObstacle(t[0], t[1], 70, 70, "tree");
+
+    addObstacle(
+        t[0],
+        t[1],
+        75,
+        75,
+        "tree"
+    );
+
 }
 
 
 /* ===== 바위 ===== */
 
 const rocks = [
-    [750, 300],
-    [820, 340],
-    [1950, 500],
-    [2050, 550],
-    [300, 1050]
+
+    [700, 700],
+    [800, 750],
+    [1900, 350],
+    [2000, 400],
+    [500, 1300],
+    [1500, 1500]
+
 ];
 
 for (const r of rocks) {
-    addObstacle(r[0], r[1], 80, 60, "rock");
+
+    addObstacle(
+        r[0],
+        r[1],
+        85,
+        65,
+        "rock"
+    );
+
 }
 
 
 /* ===== 드럼통 ===== */
 
 const drums = [
-    [500, 900],
-    [570, 900],
-    [640, 900],
 
-    [2100, 1200],
-    [2160, 1200]
+    [1050, 900],
+    [1100, 900],
+    [1150, 900],
+
+    [2000, 1300],
+    [2050, 1300]
+
 ];
 
 for (const d of drums) {
-    addObstacle(d[0], d[1], 40, 40, "drum");
+
+    addObstacle(
+        d[0],
+        d[1],
+        40,
+        40,
+        "drum"
+    );
+
 }
 
 
-/* =========================
+/* =====================================
    무기
-========================= */
+===================================== */
 
 let weapons = [
-    {x: 800, y: 850, taken: false},
-    {x: 1200, y: 500, taken: false},
-    {x: 1700, y: 700, taken: false}
+
+    {
+        x: 1050,
+        y: 800,
+        taken: false
+    },
+
+    {
+        x: 1500,
+        y: 700,
+        taken: false
+    },
+
+    {
+        x: 1900,
+        y: 1200,
+        taken: false
+    }
+
 ];
 
 
-/* =========================
+/* =====================================
    총알
-========================= */
+===================================== */
 
 let bullets = [];
 
 
-/* =========================
+/* =====================================
    게임 상태
-========================= */
+===================================== */
 
 let gameOver = false;
 let winner = "";
 
 
-/* =========================
+/* =====================================
    충돌 검사
-========================= */
+===================================== */
 
-function playerHitsObstacle(player, x, y) {
+function hitsObstacle(player, x, y) {
 
     const left = x - player.radius;
     const right = x + player.radius;
+
     const top = y - player.radius;
     const bottom = y + player.radius;
+
 
     for (const o of obstacles) {
 
@@ -282,45 +374,82 @@ function playerHitsObstacle(player, x, y) {
             bottom > o.y &&
             top < o.y + o.h
         ) {
+
             return true;
+
         }
+
     }
 
     return false;
+
 }
 
 
-/* =========================
+/* =====================================
    플레이어 이동
-========================= */
+===================================== */
 
-function updatePlayer(player, controls) {
+function updatePlayer(player, control) {
 
     let dx = 0;
     let dy = 0;
 
-    if (keys[controls.up]) dy--;
-    if (keys[controls.down]) dy++;
-    if (keys[controls.left]) dx--;
-    if (keys[controls.right]) dx++;
+
+    /* 이동 */
+
+    if (keys[control.up]) dy -= 1;
+    if (keys[control.down]) dy += 1;
+
+    if (keys[control.left]) dx -= 1;
+    if (keys[control.right]) dx += 1;
+
 
     if (dx !== 0 || dy !== 0) {
 
-        const length = Math.sqrt(dx * dx + dy * dy);
+        const length = Math.sqrt(
+            dx * dx + dy * dy
+        );
 
         dx /= length;
         dy /= length;
 
-        const newX = player.x + dx * player.speed;
-        const newY = player.y + dy * player.speed;
+        const newX =
+            player.x + dx * player.speed;
 
-        if (!playerHitsObstacle(player, newX, player.y)) {
+        const newY =
+            player.y + dy * player.speed;
+
+
+        /* X축 이동 */
+
+        if (
+            !hitsObstacle(
+                player,
+                newX,
+                player.y
+            )
+        ) {
+
             player.x = newX;
+
         }
 
-        if (!playerHitsObstacle(player, player.x, newY)) {
+
+        /* Y축 이동 */
+
+        if (
+            !hitsObstacle(
+                player,
+                player.x,
+                newY
+            )
+        ) {
+
             player.y = newY;
+
         }
+
     }
 
 
@@ -328,149 +457,229 @@ function updatePlayer(player, controls) {
 
     player.x = Math.max(
         player.radius,
-        Math.min(WORLD_W - player.radius, player.x)
+        Math.min(
+            WORLD_W - player.radius,
+            player.x
+        )
     );
 
     player.y = Math.max(
         player.radius,
-        Math.min(WORLD_H - player.radius, player.y)
+        Math.min(
+            WORLD_H - player.radius,
+            player.y
+        )
     );
 
 
     /* 조준 */
 
-    let ax = 0;
-    let ay = 0;
+    let aimX = 0;
+    let aimY = 0;
 
-    if (keys[controls.aimUp]) ay--;
-    if (keys[controls.aimDown]) ay++;
-    if (keys[controls.aimLeft]) ax--;
-    if (keys[controls.aimRight]) ax++;
 
-    if (ax !== 0 || ay !== 0) {
+    if (keys[control.aimUp]) aimY -= 1;
+    if (keys[control.aimDown]) aimY += 1;
 
-        const len = Math.sqrt(ax * ax + ay * ay);
+    if (keys[control.aimLeft]) aimX -= 1;
+    if (keys[control.aimRight]) aimX += 1;
 
-        player.aimX = ax / len;
-        player.aimY = ay / len;
+
+    if (aimX !== 0 || aimY !== 0) {
+
+        const length = Math.sqrt(
+            aimX * aimX +
+            aimY * aimY
+        );
+
+        player.aimX = aimX / length;
+        player.aimY = aimY / length;
+
     }
 
-    if (player.shootTimer > 0) {
-        player.shootTimer--;
+
+    if (player.cooldown > 0) {
+        player.cooldown--;
     }
+
 }
 
 
-/* =========================
+/* =====================================
    총 발사
-========================= */
+===================================== */
 
 function shoot(player) {
 
-    if (!player.hasWeapon) return;
+    if (!player.hasWeapon) {
+        return;
+    }
 
-    if (player.shootTimer > 0) return;
+    if (player.cooldown > 0) {
+        return;
+    }
 
-    player.shootTimer = 15;
+
+    player.cooldown = 18;
+
 
     bullets.push({
-        x: player.x + player.aimX * 40,
-        y: player.y + player.aimY * 40,
+
+        x:
+            player.x +
+            player.aimX * 45,
+
+        y:
+            player.y +
+            player.aimY * 45,
 
         dx: player.aimX,
         dy: player.aimY,
 
         owner: player,
 
-        speed: 12,
-        damage: 15,
-        radius: 6
+        speed: 13,
+
+        radius: 6,
+
+        damage: 15
+
     });
+
 }
 
 
-/* =========================
+/* =====================================
    총알 업데이트
-========================= */
+===================================== */
 
 function updateBullets() {
 
-    for (let i = bullets.length - 1; i >= 0; i--) {
+    for (
+        let i = bullets.length - 1;
+        i >= 0;
+        i--
+    ) {
 
-        const b = bullets[i];
+        const bullet = bullets[i];
 
-        b.x += b.dx * b.speed;
-        b.y += b.dy * b.speed;
+
+        bullet.x +=
+            bullet.dx * bullet.speed;
+
+        bullet.y +=
+            bullet.dy * bullet.speed;
+
 
         let remove = false;
 
 
-        /* 구조물 충돌 */
+        /* 구조물 */
 
         for (const o of obstacles) {
 
             if (
-                b.x > o.x &&
-                b.x < o.x + o.w &&
-                b.y > o.y &&
-                b.y < o.y + o.h
+
+                bullet.x > o.x &&
+                bullet.x < o.x + o.w &&
+
+                bullet.y > o.y &&
+                bullet.y < o.y + o.h
+
             ) {
+
                 remove = true;
+
             }
+
         }
 
 
-        /* 플레이어 충돌 */
+        /* 플레이어 */
 
-        for (const p of [p1, p2]) {
+        for (const player of [p1, p2]) {
 
-            if (p !== b.owner) {
+            if (
+                player === bullet.owner
+            ) continue;
 
-                const dx = b.x - p.x;
-                const dy = b.y - p.y;
 
-                const distance =
-                    Math.sqrt(dx * dx + dy * dy);
+            const dx =
+                bullet.x - player.x;
 
-                if (distance < p.radius + b.radius) {
+            const dy =
+                bullet.y - player.y;
 
-                    p.hp -= b.damage;
-                    remove = true;
 
-                    if (p.hp <= 0) {
+            const distance =
+                Math.sqrt(
+                    dx * dx +
+                    dy * dy
+                );
 
-                        p.hp = 0;
-                        gameOver = true;
 
-                        winner =
-                            b.owner.name + " WINS!";
-                    }
+            if (
+                distance <
+                player.radius +
+                bullet.radius
+            ) {
+
+                player.hp -=
+                    bullet.damage;
+
+                remove = true;
+
+
+                if (
+                    player.hp <= 0
+                ) {
+
+                    player.hp = 0;
+
+                    gameOver = true;
+
+                    winner =
+                        bullet.owner.name +
+                        " 승리!";
+
                 }
+
             }
+
         }
 
 
         /* 맵 밖 */
 
         if (
-            b.x < 0 ||
-            b.x > WORLD_W ||
-            b.y < 0 ||
-            b.y > WORLD_H
+
+            bullet.x < 0 ||
+            bullet.x > WORLD_W ||
+
+            bullet.y < 0 ||
+            bullet.y > WORLD_H
+
         ) {
+
             remove = true;
+
         }
 
+
         if (remove) {
+
             bullets.splice(i, 1);
+
         }
+
     }
+
 }
 
 
-/* =========================
+/* =====================================
    무기 획득
-========================= */
+===================================== */
 
 function updateWeapons() {
 
@@ -478,190 +687,290 @@ function updateWeapons() {
 
         if (weapon.taken) continue;
 
-        for (const player of [p1, p2]) {
 
-            const dx = player.x - weapon.x;
-            const dy = player.y - weapon.y;
+        for (
+            const player of [p1, p2]
+        ) {
+
+            const dx =
+                player.x - weapon.x;
+
+            const dy =
+                player.y - weapon.y;
+
 
             const distance =
-                Math.sqrt(dx * dx + dy * dy);
+                Math.sqrt(
+                    dx * dx +
+                    dy * dy
+                );
 
-            if (distance < 45) {
+
+            if (distance < 50) {
 
                 player.hasWeapon = true;
                 weapon.taken = true;
+
             }
+
         }
+
     }
+
 }
 
 
-/* =========================
+/* =====================================
    카메라
-========================= */
+   두 캐릭터의 중간을 따라감
+===================================== */
 
 function getCamera() {
 
-    const centerX = (p1.x + p2.x) / 2;
-    const centerY = (p1.y + p2.y) / 2;
+    const centerX =
+        (p1.x + p2.x) / 2;
 
-    let camX = centerX - W / 2;
-    let camY = centerY - H / 2;
+    const centerY =
+        (p1.y + p2.y) / 2;
 
-    camX = Math.max(
+
+    let x =
+        centerX - SCREEN_W / 2;
+
+    let y =
+        centerY - SCREEN_H / 2;
+
+
+    x = Math.max(
         0,
-        Math.min(WORLD_W - W, camX)
+        Math.min(
+            WORLD_W - SCREEN_W,
+            x
+        )
     );
 
-    camY = Math.max(
+
+    y = Math.max(
         0,
-        Math.min(WORLD_H - H, camY)
+        Math.min(
+            WORLD_H - SCREEN_H,
+            y
+        )
     );
+
 
     return {
-        x: camX,
-        y: camY
+        x: x,
+        y: y
     };
+
 }
 
 
-/* =========================
+/* =====================================
    구조물 그리기
-========================= */
+===================================== */
 
 function drawObstacle(o, cam) {
 
     const x = o.x - cam.x;
     const y = o.y - cam.y;
 
-    if (o.type === "wall") {
 
-        ctx.fillStyle = "#c7b69e";
+    if (
+        x > SCREEN_W ||
+        y > SCREEN_H ||
+        x + o.w < 0 ||
+        y + o.h < 0
+    ) return;
+
+
+    if (o.type === "houseWall") {
+
+        ctx.fillStyle = "#c9b18f";
         ctx.fillRect(x, y, o.w, o.h);
 
-        ctx.strokeStyle = "#555";
+        ctx.strokeStyle = "#594d40";
         ctx.lineWidth = 4;
         ctx.strokeRect(x, y, o.w, o.h);
+
     }
 
 
-    if (o.type === "crate") {
+    else if (o.type === "crate") {
 
-        ctx.fillStyle = "#8b552d";
+        ctx.fillStyle = "#985a2b";
         ctx.fillRect(x, y, o.w, o.h);
 
-        ctx.strokeStyle = "#553015";
+        ctx.strokeStyle = "#5c3215";
         ctx.lineWidth = 4;
         ctx.strokeRect(x, y, o.w, o.h);
 
         ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + o.w, y + o.h);
 
-        ctx.moveTo(x + o.w, y);
-        ctx.lineTo(x, y + o.h);
+        ctx.moveTo(x, y);
+        ctx.lineTo(
+            x + o.w,
+            y + o.h
+        );
+
+        ctx.moveTo(
+            x + o.w,
+            y
+        );
+
+        ctx.lineTo(
+            x,
+            y + o.h
+        );
 
         ctx.stroke();
+
     }
 
 
-    if (o.type === "concrete") {
+    else if (o.type === "concrete") {
 
-        ctx.fillStyle = "#777";
+        ctx.fillStyle = "#858585";
         ctx.fillRect(x, y, o.w, o.h);
 
         ctx.strokeStyle = "#444";
         ctx.lineWidth = 4;
         ctx.strokeRect(x, y, o.w, o.h);
 
+
         ctx.strokeStyle = "#666";
 
-        for (let bx = x; bx < x + o.w; bx += 35) {
+
+        for (
+            let bx = x;
+            bx < x + o.w;
+            bx += 40
+        ) {
 
             ctx.beginPath();
+
             ctx.moveTo(bx, y);
-            ctx.lineTo(bx, y + o.h);
+            ctx.lineTo(
+                bx,
+                y + o.h
+            );
+
             ctx.stroke();
+
         }
+
     }
 
 
-    if (o.type === "car") {
+    else if (o.type === "car") {
 
-        ctx.fillStyle = "#bd3434";
-        ctx.fillRect(x, y, o.w, o.h);
+        ctx.fillStyle = "#b52e2e";
 
-        ctx.fillStyle = "#7cc6e8";
+        ctx.fillRect(
+            x,
+            y,
+            o.w,
+            o.h
+        );
+
+
+        ctx.fillStyle = "#75c5e8";
+
         ctx.fillRect(
             x + 35,
             y + 12,
             o.w - 70,
-            25
+            28
         );
+
 
         ctx.fillStyle = "#111";
 
-        ctx.beginPath();
-        ctx.arc(x + 30, y + o.h, 13, 0, Math.PI * 2);
-        ctx.fill();
 
         ctx.beginPath();
+
         ctx.arc(
-            x + o.w - 30,
+            x + 30,
             y + o.h,
-            13,
-            0,
-            Math.PI * 2
-        );
-        ctx.fill();
-    }
-
-
-    if (o.type === "tree") {
-
-        ctx.fillStyle = "#613b1c";
-
-        ctx.beginPath();
-        ctx.arc(
-            x + o.w / 2,
-            y + o.h / 2,
             14,
             0,
             Math.PI * 2
         );
+
         ctx.fill();
 
-        ctx.fillStyle = "#2e7d32";
 
         ctx.beginPath();
+
         ctx.arc(
-            x + o.w / 2,
-            y + o.h / 2,
-            34,
+            x + o.w - 30,
+            y + o.h,
+            14,
             0,
             Math.PI * 2
         );
+
         ctx.fill();
 
-        ctx.fillStyle = "#48a848";
-
-        ctx.beginPath();
-        ctx.arc(
-            x + o.w / 2 - 10,
-            y + o.h / 2 - 10,
-            20,
-            0,
-            Math.PI * 2
-        );
-        ctx.fill();
     }
 
 
-    if (o.type === "rock") {
+    else if (o.type === "tree") {
 
-        ctx.fillStyle = "#888";
+        ctx.fillStyle = "#623b1e";
 
         ctx.beginPath();
+
+        ctx.arc(
+            x + o.w / 2,
+            y + o.h / 2,
+            16,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+
+
+        ctx.fillStyle = "#287a35";
+
+        ctx.beginPath();
+
+        ctx.arc(
+            x + o.w / 2,
+            y + o.h / 2,
+            37,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+
+
+        ctx.fillStyle = "#48a84e";
+
+        ctx.beginPath();
+
+        ctx.arc(
+            x + o.w / 2 - 10,
+            y + o.h / 2 - 10,
+            22,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+
+    }
+
+
+    else if (o.type === "rock") {
+
+        ctx.fillStyle = "#85898d";
+
+        ctx.beginPath();
+
         ctx.ellipse(
             x + o.w / 2,
             y + o.h / 2,
@@ -674,50 +983,77 @@ function drawObstacle(o, cam) {
 
         ctx.fill();
 
+
         ctx.strokeStyle = "#555";
+        ctx.lineWidth = 3;
         ctx.stroke();
+
     }
 
 
-    if (o.type === "drum") {
+    else if (o.type === "drum") {
 
-        ctx.fillStyle = "#287ac2";
+        ctx.fillStyle = "#287fc7";
         ctx.fillRect(x, y, o.w, o.h);
 
-        ctx.strokeStyle = "white";
+
+        ctx.strokeStyle = "#dcefff";
+        ctx.lineWidth = 3;
+
 
         ctx.beginPath();
-        ctx.moveTo(x, y + 12);
-        ctx.lineTo(x + o.w, y + 12);
 
-        ctx.moveTo(x, y + o.h - 12);
-        ctx.lineTo(x + o.w, y + o.h - 12);
+        ctx.moveTo(
+            x,
+            y + 12
+        );
+
+        ctx.lineTo(
+            x + o.w,
+            y + 12
+        );
+
+        ctx.moveTo(
+            x,
+            y + o.h - 12
+        );
+
+        ctx.lineTo(
+            x + o.w,
+            y + o.h - 12
+        );
 
         ctx.stroke();
+
     }
+
 }
 
 
-/* =========================
-   플레이어 그리기
-========================= */
+/* =====================================
+   캐릭터 그리기
+===================================== */
 
-function drawPlayer(p, cam) {
+function drawPlayer(player, cam) {
 
-    const x = p.x - cam.x;
-    const y = p.y - cam.y;
+    const x =
+        player.x - cam.x;
+
+    const y =
+        player.y - cam.y;
 
 
     /* 그림자 */
 
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.fillStyle =
+        "rgba(0,0,0,0.25)";
 
     ctx.beginPath();
 
     ctx.ellipse(
         x,
         y + 15,
-        22,
+        24,
         10,
         0,
         0,
@@ -727,369 +1063,540 @@ function drawPlayer(p, cam) {
     ctx.fill();
 
 
-    /* 몸 */
+    /* 다리 */
 
-    ctx.fillStyle = p.color;
+    ctx.fillStyle = "#333";
 
     ctx.beginPath();
-    ctx.arc(x, y + 4, 22, 0, Math.PI * 2);
+
+    ctx.arc(
+        x - 11,
+        y + 15,
+        10,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+
+    ctx.beginPath();
+
+    ctx.arc(
+        x + 11,
+        y + 15,
+        10,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+
+    /* 몸통 */
+
+    ctx.fillStyle =
+        player.color;
+
+    ctx.beginPath();
+
+    ctx.arc(
+        x,
+        y + 3,
+        23,
+        0,
+        Math.PI * 2
+    );
+
     ctx.fill();
 
 
     /* 머리 */
 
-    ctx.fillStyle = "#f0c99b";
+    ctx.fillStyle = "#f1c99e";
 
     ctx.beginPath();
-    ctx.arc(x, y - 15, 13, 0, Math.PI * 2);
+
+    ctx.arc(
+        x,
+        y - 16,
+        13,
+        0,
+        Math.PI * 2
+    );
+
     ctx.fill();
 
 
-    /* 팔 + 총 */
+    /* 팔 */
 
-    ctx.strokeStyle = "#f0c99b";
+    ctx.strokeStyle = "#f1c99e";
     ctx.lineWidth = 10;
 
     ctx.beginPath();
 
-    ctx.moveTo(x, y);
+    ctx.moveTo(
+        x,
+        y
+    );
 
     ctx.lineTo(
-        x + p.aimX * 22,
-        y + p.aimY * 22
+        x +
+        player.aimX * 24,
+
+        y +
+        player.aimY * 24
     );
 
     ctx.stroke();
 
 
-    if (p.hasWeapon) {
+    /* 총 */
 
-        ctx.strokeStyle = "#222";
-        ctx.lineWidth = 8;
+    if (player.hasWeapon) {
+
+        ctx.strokeStyle = "#1d1d1d";
+        ctx.lineWidth = 9;
 
         ctx.beginPath();
 
         ctx.moveTo(
-            x + p.aimX * 15,
-            y + p.aimY * 15
+            x +
+            player.aimX * 15,
+
+            y +
+            player.aimY * 15
         );
 
         ctx.lineTo(
-            x + p.aimX * 48,
-            y + p.aimY * 48
+            x +
+            player.aimX * 52,
+
+            y +
+            player.aimY * 52
         );
 
         ctx.stroke();
+
     }
 
 
-    /* HP 바 */
+    /* HP */
 
-    ctx.fillStyle = "#d33";
+    ctx.fillStyle = "#d93232";
 
     ctx.fillRect(
-        x - 32,
-        y - 52,
-        64,
-        8
+        x - 35,
+        y - 58,
+        70,
+        9
     );
+
 
     ctx.fillStyle = "#39d353";
 
     ctx.fillRect(
-        x - 32,
-        y - 52,
-        64 * (p.hp / 100),
-        8
+        x - 35,
+        y - 58,
+        70 *
+        (player.hp / 100),
+        9
     );
 
 
     /* 이름 */
 
     ctx.fillStyle = "white";
-    ctx.font = "18px Arial";
+    ctx.font = "bold 17px Arial";
     ctx.textAlign = "center";
 
     ctx.fillText(
-        p.name,
+        player.name,
         x,
-        y - 62
+        y - 67
     );
+
 }
 
 
-/* =========================
+/* =====================================
    무기 그리기
-========================= */
+===================================== */
 
 function drawWeapons(cam) {
 
-    for (const w of weapons) {
+    for (const weapon of weapons) {
 
-        if (w.taken) continue;
+        if (weapon.taken) continue;
 
-        const x = w.x - cam.x;
-        const y = w.y - cam.y;
 
-        ctx.fillStyle = "#f5c542";
+        const x =
+            weapon.x - cam.x;
+
+        const y =
+            weapon.y - cam.y;
+
+
+        ctx.fillStyle =
+            "rgba(255,215,0,0.35)";
 
         ctx.beginPath();
-        ctx.arc(x, y, 25, 0, Math.PI * 2);
+
+        ctx.arc(
+            x,
+            y,
+            32,
+            0,
+            Math.PI * 2
+        );
+
         ctx.fill();
 
-        ctx.fillStyle = "#111";
+
+        ctx.fillStyle = "#222";
 
         ctx.fillRect(
-            x - 8,
-            y - 10,
-            35,
-            10
+            x - 12,
+            y - 7,
+            38,
+            12
         );
 
+
         ctx.fillRect(
-            x + 15,
-            y - 5,
-            12,
-            20
+            x + 12,
+            y,
+            13,
+            22
         );
+
     }
+
 }
 
 
-/* =========================
+/* =====================================
    총알 그리기
-========================= */
+===================================== */
 
 function drawBullets(cam) {
 
-    for (const b of bullets) {
+    for (const bullet of bullets) {
 
         ctx.fillStyle = "#ff9d00";
 
         ctx.beginPath();
 
         ctx.arc(
-            b.x - cam.x,
-            b.y - cam.y,
-            b.radius,
+            bullet.x - cam.x,
+            bullet.y - cam.y,
+            bullet.radius,
             0,
             Math.PI * 2
         );
 
         ctx.fill();
+
     }
+
 }
 
 
-/* =========================
+/* =====================================
    UI
-========================= */
+===================================== */
 
 function drawUI() {
 
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(0, 0, W, 55);
+    ctx.fillStyle =
+        "rgba(0,0,0,0.65)";
 
-    ctx.fillStyle = "white";
-    ctx.font = "20px Arial";
+    ctx.fillRect(
+        0,
+        0,
+        SCREEN_W,
+        58
+    );
+
+
+    ctx.font =
+        "bold 20px Arial";
+
+
     ctx.textAlign = "left";
+
+    ctx.fillStyle = "#f4d03f";
 
     ctx.fillText(
         "P1 HP: " + p1.hp +
-        (p1.hasWeapon ? "  🔫" : "  맨손"),
+        (p1.hasWeapon ? " 🔫" : ""),
         20,
         35
     );
 
+
     ctx.textAlign = "right";
+
+    ctx.fillStyle = "#3498db";
 
     ctx.fillText(
         "P2 HP: " + p2.hp +
-        (p2.hasWeapon ? "  🔫" : "  맨손"),
-        W - 20,
+        (p2.hasWeapon ? " 🔫" : ""),
+        SCREEN_W - 20,
         35
     );
 
-    ctx.font = "15px Arial";
+
+    ctx.fillStyle = "white";
+    ctx.font = "14px Arial";
     ctx.textAlign = "center";
 
     ctx.fillText(
-        "P1: WASD 이동 / IJKL 조준 / F 발사     |     P2: 방향키 이동 / 숫자패드 8456 조준 / Enter 발사",
-        W / 2,
-        H - 20
+        "P1: WASD 이동 / IJKL 조준 / F 발사     |     P2: 방향키 이동 / 8456 조준 / Enter 발사",
+        SCREEN_W / 2,
+        SCREEN_H - 20
     );
+
 }
 
 
-/* =========================
+/* =====================================
    게임 종료
-========================= */
+===================================== */
 
 function drawGameOver() {
 
     if (!gameOver) return;
 
-    ctx.fillStyle = "rgba(0,0,0,0.7)";
-    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle =
+        "rgba(0,0,0,0.72)";
+
+    ctx.fillRect(
+        0,
+        0,
+        SCREEN_W,
+        SCREEN_H
+    );
+
 
     ctx.fillStyle = "white";
     ctx.textAlign = "center";
 
-    ctx.font = "60px Arial";
+    ctx.font =
+        "bold 64px Arial";
 
     ctx.fillText(
         winner,
-        W / 2,
-        H / 2 - 30
+        SCREEN_W / 2,
+        SCREEN_H / 2 - 20
     );
 
-    ctx.font = "28px Arial";
+
+    ctx.font =
+        "28px Arial";
 
     ctx.fillText(
         "R 키를 눌러 다시 시작",
-        W / 2,
-        H / 2 + 40
+        SCREEN_W / 2,
+        SCREEN_H / 2 + 45
     );
+
 }
 
 
-/* =========================
-   게임 재시작
-========================= */
+/* =====================================
+   재시작
+===================================== */
 
 function restartGame() {
 
     p1 = createPlayer(
-        150,
-        150,
-        "#f5d52a",
+        300,
+        300,
+        "#f4d03f",
         "P1"
     );
 
+
     p2 = createPlayer(
-        2200,
-        1400,
-        "#3d8cff",
+        2700,
+        1900,
+        "#3498db",
         "P2"
     );
 
+
     bullets = [];
 
+
     weapons = [
-        {x: 800, y: 850, taken: false},
-        {x: 1200, y: 500, taken: false},
-        {x: 1700, y: 700, taken: false}
+
+        {
+            x: 1050,
+            y: 800,
+            taken: false
+        },
+
+        {
+            x: 1500,
+            y: 700,
+            taken: false
+        },
+
+        {
+            x: 1900,
+            y: 1200,
+            taken: false
+        }
+
     ];
+
 
     gameOver = false;
     winner = "";
+
 }
 
 
-/* =========================
-   메인 게임 루프
-========================= */
+/* =====================================
+   게임 루프
+===================================== */
 
 function gameLoop() {
 
     if (!gameOver) {
 
-        updatePlayer(p1, {
-            up: "w",
-            down: "s",
-            left: "a",
-            right: "d",
+        /* P1 */
 
-            aimUp: "i",
-            aimDown: "k",
-            aimLeft: "j",
-            aimRight: "l"
-        });
+        updatePlayer(
+            p1,
+            {
+                up: "w",
+                down: "s",
+                left: "a",
+                right: "d",
+
+                aimUp: "i",
+                aimDown: "k",
+                aimLeft: "j",
+                aimRight: "l"
+            }
+        );
 
 
-        updatePlayer(p2, {
-            up: "ArrowUp",
-            down: "ArrowDown",
-            left: "ArrowLeft",
-            right: "ArrowRight",
+        /* P2 */
 
-            aimUp: "8",
-            aimDown: "5",
-            aimLeft: "4",
-            aimRight: "6"
-        });
+        updatePlayer(
+            p2,
+            {
+                up: "ArrowUp",
+                down: "ArrowDown",
+                left: "ArrowLeft",
+                right: "ArrowRight",
+
+                aimUp: "8",
+                aimDown: "5",
+                aimLeft: "4",
+                aimRight: "6"
+            }
+        );
 
 
         updateWeapons();
         updateBullets();
+
     }
 
 
-    const cam = getCamera();
+    const cam =
+        getCamera();
 
 
     /* 배경 */
 
     ctx.fillStyle = "#4f913f";
-    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillRect(
+        0,
+        0,
+        SCREEN_W,
+        SCREEN_H
+    );
 
 
     /* 도로 */
 
-    const roadY = 760 - cam.y;
+    const roadY =
+        1000 - cam.y;
 
-    ctx.fillStyle = "#606060";
+
+    ctx.fillStyle = "#666";
 
     ctx.fillRect(
         0,
         roadY,
-        W,
-        180
+        SCREEN_W,
+        220
     );
 
 
-    /* 도로 중앙선 */
+    /* 도로 선 */
 
-    ctx.fillStyle = "#e5e0b5";
+    ctx.fillStyle = "#e5dfaa";
+
 
     for (
-        let x = -cam.x % 80;
-        x < W;
-        x += 80
+        let x = -cam.x % 100;
+        x < SCREEN_W;
+        x += 100
     ) {
 
         ctx.fillRect(
             x,
-            roadY + 85,
-            40,
-            8
+            roadY + 105,
+            50,
+            10
         );
+
     }
 
 
     /* 구조물 */
 
     for (const o of obstacles) {
-        drawObstacle(o, cam);
+
+        drawObstacle(
+            o,
+            cam
+        );
+
     }
 
 
     drawWeapons(cam);
+
     drawBullets(cam);
 
     drawPlayer(p1, cam);
     drawPlayer(p2, cam);
 
     drawUI();
+
     drawGameOver();
 
-    requestAnimationFrame(gameLoop);
+
+    requestAnimationFrame(
+        gameLoop
+    );
+
 }
 
 
 gameLoop();
 
 </script>
+
 </body>
 </html>
 """
