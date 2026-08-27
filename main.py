@@ -1,746 +1,1101 @@
-import pygame
-import math
-import random
-
-pygame.init()
-
-# ==============================
-# 기본 설정
-# ==============================
-SCREEN_W, SCREEN_H = 1200, 800
-WORLD_W, WORLD_H = 2400, 1600
-
-screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-pygame.display.set_caption("2 Player Top-Down Shooter")
-
-clock = pygame.time.Clock()
-FONT = pygame.font.SysFont("arial", 24)
-BIG_FONT = pygame.font.SysFont("arial", 60)
-
-# 색상
-GRASS = (70, 130, 70)
-ROAD = (90, 90, 90)
-WHITE = (255, 255, 255)
-BLACK = (20, 20, 20)
-YELLOW = (245, 210, 40)
-BLUE = (50, 120, 255)
-RED = (230, 60, 60)
-GREEN = (50, 220, 80)
-GRAY = (110, 110, 110)
-DARK_GRAY = (55, 55, 55)
-BROWN = (130, 80, 40)
-TREE_GREEN = (30, 110, 45)
-ROCK = (120, 125, 130)
-ORANGE = (255, 150, 30)
-
-
-# ==============================
-# 플레이어
-# ==============================
-class Player:
-    def __init__(self, x, y, color, name, controls):
-        self.x = x
-        self.y = y
-        self.color = color
-        self.name = name
-        self.controls = controls
-
-        self.radius = 24
-        self.speed = 300
-        self.hp = 100
-
-        self.aim_x = 1
-        self.aim_y = 0
-
-        self.has_weapon = False
-        self.shoot_cooldown = 0
-
-    def rect(self):
-        return pygame.Rect(
-            self.x - self.radius,
-            self.y - self.radius,
-            self.radius * 2,
-            self.radius * 2
-        )
-
-    def update(self, dt, keys, obstacles):
-        dx = 0
-        dy = 0
-
-        if keys[self.controls["up"]]:
-            dy -= 1
-        if keys[self.controls["down"]]:
-            dy += 1
-        if keys[self.controls["left"]]:
-            dx -= 1
-        if keys[self.controls["right"]]:
-            dx += 1
-
-        # 대각선 이동 속도 보정
-        length = math.hypot(dx, dy)
-        if length > 0:
-            dx /= length
-            dy /= length
-
-        new_x = self.x + dx * self.speed * dt
-        new_y = self.y + dy * self.speed * dt
-
-        # X축 충돌
-        test_rect = pygame.Rect(
-            new_x - self.radius,
-            self.y - self.radius,
-            self.radius * 2,
-            self.radius * 2
-        )
-
-        if not collision(test_rect, obstacles):
-            self.x = new_x
-
-        # Y축 충돌
-        test_rect = pygame.Rect(
-            self.x - self.radius,
-            new_y - self.radius,
-            self.radius * 2,
-            self.radius * 2
-        )
-
-        if not collision(test_rect, obstacles):
-            self.y = new_y
-
-        # 맵 밖으로 못 나가게
-        self.x = max(self.radius, min(WORLD_W - self.radius, self.x))
-        self.y = max(self.radius, min(WORLD_H - self.radius, self.y))
-
-        # 조준
-        aim_dx = 0
-        aim_dy = 0
-
-        if keys[self.controls["aim_up"]]:
-            aim_dy -= 1
-        if keys[self.controls["aim_down"]]:
-            aim_dy += 1
-        if keys[self.controls["aim_left"]]:
-            aim_dx -= 1
-        if keys[self.controls["aim_right"]]:
-            aim_dx += 1
-
-        if aim_dx != 0 or aim_dy != 0:
-            length = math.hypot(aim_dx, aim_dy)
-            self.aim_x = aim_dx / length
-            self.aim_y = aim_dy / length
-
-        self.shoot_cooldown -= dt
-
-    def shoot(self):
-        if not self.has_weapon:
-            return None
-
-        if self.shoot_cooldown > 0:
-            return None
-
-        self.shoot_cooldown = 0.3
-
-        return Bullet(
-            self.x + self.aim_x * 35,
-            self.y + self.aim_y * 35,
-            self.aim_x,
-            self.aim_y,
-            self
-        )
-
-    def draw(self, surface, cam_x, cam_y):
-        sx = int(self.x - cam_x)
-        sy = int(self.y - cam_y)
-
-        # 그림자
-        pygame.draw.ellipse(
-            surface,
-            (30, 30, 30),
-            (sx - 20, sy + 10, 40, 18)
-        )
-
-        # 다리
-        pygame.draw.circle(surface, DARK_GRAY, (sx - 10, sy + 12), 10)
-        pygame.draw.circle(surface, DARK_GRAY, (sx + 10, sy + 12), 10)
-
-        # 몸통
-        pygame.draw.circle(surface, self.color, (sx, sy + 4), 22)
-
-        # 머리
-        pygame.draw.circle(surface, (245, 210, 180), (sx, sy - 15), 13)
-
-        # 조준 방향
-        gun_end_x = sx + self.aim_x * 42
-        gun_end_y = sy + self.aim_y * 42
-
-        # 팔
-        pygame.draw.line(
-            surface,
-            (240, 220, 190),
-            (sx, sy),
-            (
-                int(sx + self.aim_x * 20),
-                int(sy + self.aim_y * 20)
-            ),
-            10
-        )
-
-        # 총
-        if self.has_weapon:
-            pygame.draw.line(
-                surface,
-                BLACK,
-                (
-                    int(sx + self.aim_x * 15),
-                    int(sy + self.aim_y * 15)
-                ),
-                (int(gun_end_x), int(gun_end_y)),
-                8
-            )
-
-        # 이름
-        name_text = FONT.render(self.name, True, WHITE)
-        surface.blit(
-            name_text,
-            (sx - name_text.get_width() // 2, sy - 65)
-        )
-
-        # HP 바
-        bar_w = 60
-        hp_ratio = max(0, self.hp) / 100
-
-        pygame.draw.rect(
-            surface,
-            RED,
-            (sx - bar_w // 2, sy - 45, bar_w, 8)
-        )
-
-        pygame.draw.rect(
-            surface,
-            GREEN,
-            (sx - bar_w // 2, sy - 45, int(bar_w * hp_ratio), 8)
-        )
-
-
-# ==============================
-# 총알
-# ==============================
-class Bullet:
-    def __init__(self, x, y, dx, dy, owner):
-        self.x = x
-        self.y = y
-        self.dx = dx
-        self.dy = dy
-        self.owner = owner
-
-        self.speed = 850
-        self.radius = 6
-        self.damage = 15
-        self.alive = True
-
-    def update(self, dt, obstacles, players):
-        self.x += self.dx * self.speed * dt
-        self.y += self.dy * self.speed * dt
-
-        bullet_rect = pygame.Rect(
-            self.x - self.radius,
-            self.y - self.radius,
-            self.radius * 2,
-            self.radius * 2
-        )
-
-        # 구조물 충돌
-        if collision(bullet_rect, obstacles):
-            self.alive = False
-            return
-
-        # 플레이어 충돌
-        for player in players:
-            if player != self.owner and player.hp > 0:
-                distance = math.hypot(
-                    self.x - player.x,
-                    self.y - player.y
-                )
-
-                if distance < player.radius + self.radius:
-                    player.hp -= self.damage
-                    self.alive = False
-                    return
-
-        # 맵 밖
-        if (
-            self.x < 0 or self.x > WORLD_W or
-            self.y < 0 or self.y > WORLD_H
-        ):
-            self.alive = False
-
-    def draw(self, surface, cam_x, cam_y):
-        pygame.draw.circle(
-            surface,
-            ORANGE,
-            (int(self.x - cam_x), int(self.y - cam_y)),
-            self.radius
-        )
-
-
-# ==============================
-# 충돌 검사
-# ==============================
-def collision(rect, obstacles):
-    for obstacle in obstacles:
-        if rect.colliderect(obstacle["rect"]):
-            return True
-    return False
-
-
-# ==============================
-# 맵 구조물 생성
-# ==============================
-obstacles = []
-
-
-def add_obstacle(x, y, w, h, kind):
-    obstacles.append({
-        "rect": pygame.Rect(x, y, w, h),
-        "kind": kind
-    })
-
-
-# 집 외벽
-add_obstacle(250, 180, 400, 35, "wall")
-add_obstacle(250, 180, 35, 300, "wall")
-add_obstacle(615, 180, 35, 300, "wall")
-
-# 집 아래 벽 - 문 공간 남김
-add_obstacle(250, 445, 150, 35, "wall")
-add_obstacle(500, 445, 150, 35, "wall")
-
-# 집 내부 가구
-add_obstacle(340, 260, 110, 55, "crate")
-add_obstacle(500, 330, 70, 70, "crate")
-
-# 창고
-add_obstacle(1550, 950, 500, 40, "wall")
-add_obstacle(1550, 950, 40, 350, "wall")
-add_obstacle(2010, 950, 40, 350, "wall")
-add_obstacle(1550, 1260, 190, 40, "wall")
-add_obstacle(1850, 1260, 200, 40, "wall")
-
-# 창고 상자
-add_obstacle(1650, 1040, 90, 90, "crate")
-add_obstacle(1850, 1080, 120, 70, "crate")
-add_obstacle(1720, 1180, 80, 60, "crate")
-
-# 중앙 콘크리트 엄폐물
-add_obstacle(900, 600, 350, 45, "concrete")
-add_obstacle(900, 600, 45, 200, "concrete")
-
-add_obstacle(1200, 350, 300, 45, "concrete")
-add_obstacle(1455, 350, 45, 200, "concrete")
-
-add_obstacle(650, 1050, 45, 250, "concrete")
-add_obstacle(650, 1255, 250, 45, "concrete")
-
-# 자동차
-add_obstacle(1100, 820, 170, 80, "car")
-add_obstacle(1350, 820, 170, 80, "car")
-
-# 나무
-tree_positions = [
-    (100, 800), (170, 850), (240, 780),
-    (2150, 300), (2250, 360), (2300, 260),
-    (350, 1300), (450, 1350), (520, 1280)
-]
-
-for x, y in tree_positions:
-    add_obstacle(x, y, 70, 70, "tree")
-
-# 바위
-rock_positions = [
-    (750, 300), (820, 340), (1950, 500),
-    (2050, 550), (300, 1050)
-]
-
-for x, y in rock_positions:
-    add_obstacle(x, y, 80, 60, "rock")
-
-# 드럼통
-drum_positions = [
-    (500, 900), (570, 900), (640, 900),
-    (2100, 1200), (2160, 1200)
-]
-
-for x, y in drum_positions:
-    add_obstacle(x, y, 40, 40, "drum")
-
-
-# ==============================
-# 무기
-# ==============================
-weapon_spawns = [
-    {"x": 800, "y": 850, "taken": False},
-    {"x": 1200, "y": 500, "taken": False},
-    {"x": 1700, "y": 700, "taken": False},
-]
-
-
-# ==============================
-# 플레이어 생성
-# ==============================
-p1 = Player(
-    150,
-    150,
-    YELLOW,
-    "P1",
-    {
-        "up": pygame.K_w,
-        "down": pygame.K_s,
-        "left": pygame.K_a,
-        "right": pygame.K_d,
-
-        "aim_up": pygame.K_i,
-        "aim_down": pygame.K_k,
-        "aim_left": pygame.K_j,
-        "aim_right": pygame.K_l,
-    }
+import streamlit as st
+import streamlit.components.v1 as components
+
+st.set_page_config(
+    page_title="2인용 탑다운 슈팅 게임",
+    layout="wide"
 )
 
-p2 = Player(
+st.title("🎮 2인용 1대1 탑다운 슈팅 게임")
+
+st.write("""
+**P1**: WASD 이동 / IJKL 조준 / F 발사  
+**P2**: 방향키 이동 / 숫자패드 8·4·5·6 조준 / Enter 발사  
+먼저 맵의 무기를 획득하고 상대 HP를 0으로 만들면 승리!
+""")
+
+game_html = """
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        overflow: hidden;
+        background: #222;
+        font-family: Arial, sans-serif;
+    }
+
+    canvas {
+        display: block;
+        margin: auto;
+        background: #4f913f;
+        border: 4px solid #111;
+    }
+</style>
+</head>
+
+<body>
+
+<canvas id="gameCanvas" width="1200" height="750"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const W = canvas.width;
+const H = canvas.height;
+
+const WORLD_W = 2400;
+const WORLD_H = 1600;
+
+const keys = {};
+
+window.addEventListener("keydown", function(e) {
+    keys[e.key] = true;
+
+    const blockedKeys = [
+        "ArrowUp", "ArrowDown",
+        "ArrowLeft", "ArrowRight",
+        " "
+    ];
+
+    if (blockedKeys.includes(e.key)) {
+        e.preventDefault();
+    }
+
+    if (!gameOver) {
+        if (e.key === "f" || e.key === "F") {
+            shoot(p1);
+        }
+
+        if (e.key === "Enter") {
+            shoot(p2);
+        }
+    }
+
+    if (gameOver && (e.key === "r" || e.key === "R")) {
+        restartGame();
+    }
+});
+
+window.addEventListener("keyup", function(e) {
+    keys[e.key] = false;
+});
+
+
+/* =========================
+   플레이어
+========================= */
+
+function createPlayer(x, y, color, name) {
+    return {
+        x: x,
+        y: y,
+        color: color,
+        name: name,
+
+        radius: 24,
+        speed: 4.5,
+
+        hp: 100,
+        hasWeapon: false,
+
+        aimX: 1,
+        aimY: 0,
+
+        shootTimer: 0
+    };
+}
+
+let p1 = createPlayer(
+    150,
+    150,
+    "#f5d52a",
+    "P1"
+);
+
+let p2 = createPlayer(
     2200,
     1400,
-    BLUE,
-    "P2",
-    {
-        "up": pygame.K_UP,
-        "down": pygame.K_DOWN,
-        "left": pygame.K_LEFT,
-        "right": pygame.K_RIGHT,
+    "#3d8cff",
+    "P2"
+);
 
-        "aim_up": pygame.K_KP8,
-        "aim_down": pygame.K_KP5,
-        "aim_left": pygame.K_KP4,
-        "aim_right": pygame.K_KP6,
+
+/* =========================
+   구조물
+========================= */
+
+const obstacles = [];
+
+function addObstacle(x, y, w, h, type) {
+    obstacles.push({
+        x, y, w, h, type
+    });
+}
+
+
+/* ===== 집 ===== */
+
+addObstacle(250, 180, 400, 35, "wall");
+addObstacle(250, 180, 35, 300, "wall");
+addObstacle(615, 180, 35, 300, "wall");
+
+addObstacle(250, 445, 150, 35, "wall");
+addObstacle(500, 445, 150, 35, "wall");
+
+addObstacle(340, 260, 110, 55, "crate");
+addObstacle(500, 330, 70, 70, "crate");
+
+
+/* ===== 창고 ===== */
+
+addObstacle(1550, 950, 500, 40, "wall");
+addObstacle(1550, 950, 40, 350, "wall");
+addObstacle(2010, 950, 40, 350, "wall");
+
+addObstacle(1550, 1260, 190, 40, "wall");
+addObstacle(1850, 1260, 200, 40, "wall");
+
+addObstacle(1650, 1040, 90, 90, "crate");
+addObstacle(1850, 1080, 120, 70, "crate");
+addObstacle(1720, 1180, 80, 60, "crate");
+
+
+/* ===== 콘크리트 엄폐물 ===== */
+
+addObstacle(900, 600, 350, 45, "concrete");
+addObstacle(900, 600, 45, 200, "concrete");
+
+addObstacle(1200, 350, 300, 45, "concrete");
+addObstacle(1455, 350, 45, 200, "concrete");
+
+addObstacle(650, 1050, 45, 250, "concrete");
+addObstacle(650, 1255, 250, 45, "concrete");
+
+
+/* ===== 자동차 ===== */
+
+addObstacle(1100, 820, 170, 80, "car");
+addObstacle(1350, 820, 170, 80, "car");
+
+
+/* ===== 나무 ===== */
+
+const trees = [
+    [100, 800],
+    [170, 850],
+    [240, 780],
+
+    [2150, 300],
+    [2250, 360],
+    [2300, 260],
+
+    [350, 1300],
+    [450, 1350],
+    [520, 1280]
+];
+
+for (const t of trees) {
+    addObstacle(t[0], t[1], 70, 70, "tree");
+}
+
+
+/* ===== 바위 ===== */
+
+const rocks = [
+    [750, 300],
+    [820, 340],
+    [1950, 500],
+    [2050, 550],
+    [300, 1050]
+];
+
+for (const r of rocks) {
+    addObstacle(r[0], r[1], 80, 60, "rock");
+}
+
+
+/* ===== 드럼통 ===== */
+
+const drums = [
+    [500, 900],
+    [570, 900],
+    [640, 900],
+
+    [2100, 1200],
+    [2160, 1200]
+];
+
+for (const d of drums) {
+    addObstacle(d[0], d[1], 40, 40, "drum");
+}
+
+
+/* =========================
+   무기
+========================= */
+
+let weapons = [
+    {x: 800, y: 850, taken: false},
+    {x: 1200, y: 500, taken: false},
+    {x: 1700, y: 700, taken: false}
+];
+
+
+/* =========================
+   총알
+========================= */
+
+let bullets = [];
+
+
+/* =========================
+   게임 상태
+========================= */
+
+let gameOver = false;
+let winner = "";
+
+
+/* =========================
+   충돌 검사
+========================= */
+
+function playerHitsObstacle(player, x, y) {
+
+    const left = x - player.radius;
+    const right = x + player.radius;
+    const top = y - player.radius;
+    const bottom = y + player.radius;
+
+    for (const o of obstacles) {
+
+        if (
+            right > o.x &&
+            left < o.x + o.w &&
+            bottom > o.y &&
+            top < o.y + o.h
+        ) {
+            return true;
+        }
     }
-)
 
-players = [p1, p2]
-bullets = []
+    return false;
+}
 
 
-# ==============================
-# 구조물 그리기
-# ==============================
-def draw_obstacle(surface, obstacle, cam_x, cam_y):
-    rect = obstacle["rect"].copy()
-    rect.x -= int(cam_x)
-    rect.y -= int(cam_y)
+/* =========================
+   플레이어 이동
+========================= */
 
-    kind = obstacle["kind"]
+function updatePlayer(player, controls) {
 
-    if kind == "wall":
-        pygame.draw.rect(surface, (190, 170, 150), rect)
-        pygame.draw.rect(surface, DARK_GRAY, rect, 4)
+    let dx = 0;
+    let dy = 0;
 
-    elif kind == "crate":
-        pygame.draw.rect(surface, BROWN, rect)
-        pygame.draw.rect(surface, (90, 50, 25), rect, 4)
-        pygame.draw.line(
-            surface,
-            (90, 50, 25),
-            rect.topleft,
-            rect.bottomright,
-            3
-        )
-        pygame.draw.line(
-            surface,
-            (90, 50, 25),
-            rect.topright,
-            rect.bottomleft,
-            3
-        )
+    if (keys[controls.up]) dy--;
+    if (keys[controls.down]) dy++;
+    if (keys[controls.left]) dx--;
+    if (keys[controls.right]) dx++;
 
-    elif kind == "concrete":
-        pygame.draw.rect(surface, GRAY, rect)
-        pygame.draw.rect(surface, DARK_GRAY, rect, 4)
+    if (dx !== 0 || dy !== 0) {
 
-        # 콘크리트 블록 선
-        for x in range(rect.x, rect.right, 30):
-            pygame.draw.line(
-                surface,
-                (80, 80, 80),
-                (x, rect.y),
-                (x, rect.bottom),
-                2
-            )
+        const length = Math.sqrt(dx * dx + dy * dy);
 
-    elif kind == "car":
-        pygame.draw.rect(surface, (190, 40, 40), rect, border_radius=12)
-        pygame.draw.rect(
-            surface,
-            (120, 190, 220),
-            (rect.x + 35, rect.y + 10, rect.width - 70, 25)
-        )
-        pygame.draw.circle(surface, BLACK, (rect.x + 30, rect.bottom), 13)
-        pygame.draw.circle(
-            surface,
-            BLACK,
-            (rect.right - 30, rect.bottom),
-            13
-        )
+        dx /= length;
+        dy /= length;
 
-    elif kind == "tree":
-        pygame.draw.circle(
-            surface,
-            (90, 55, 25),
-            rect.center,
-            15
-        )
-        pygame.draw.circle(
-            surface,
-            TREE_GREEN,
-            rect.center,
-            rect.width // 2
-        )
-        pygame.draw.circle(
-            surface,
-            (50, 150, 60),
-            (rect.centerx - 10, rect.centery - 10),
+        const newX = player.x + dx * player.speed;
+        const newY = player.y + dy * player.speed;
+
+        if (!playerHitsObstacle(player, newX, player.y)) {
+            player.x = newX;
+        }
+
+        if (!playerHitsObstacle(player, player.x, newY)) {
+            player.y = newY;
+        }
+    }
+
+
+    /* 맵 경계 */
+
+    player.x = Math.max(
+        player.radius,
+        Math.min(WORLD_W - player.radius, player.x)
+    );
+
+    player.y = Math.max(
+        player.radius,
+        Math.min(WORLD_H - player.radius, player.y)
+    );
+
+
+    /* 조준 */
+
+    let ax = 0;
+    let ay = 0;
+
+    if (keys[controls.aimUp]) ay--;
+    if (keys[controls.aimDown]) ay++;
+    if (keys[controls.aimLeft]) ax--;
+    if (keys[controls.aimRight]) ax++;
+
+    if (ax !== 0 || ay !== 0) {
+
+        const len = Math.sqrt(ax * ax + ay * ay);
+
+        player.aimX = ax / len;
+        player.aimY = ay / len;
+    }
+
+    if (player.shootTimer > 0) {
+        player.shootTimer--;
+    }
+}
+
+
+/* =========================
+   총 발사
+========================= */
+
+function shoot(player) {
+
+    if (!player.hasWeapon) return;
+
+    if (player.shootTimer > 0) return;
+
+    player.shootTimer = 15;
+
+    bullets.push({
+        x: player.x + player.aimX * 40,
+        y: player.y + player.aimY * 40,
+
+        dx: player.aimX,
+        dy: player.aimY,
+
+        owner: player,
+
+        speed: 12,
+        damage: 15,
+        radius: 6
+    });
+}
+
+
+/* =========================
+   총알 업데이트
+========================= */
+
+function updateBullets() {
+
+    for (let i = bullets.length - 1; i >= 0; i--) {
+
+        const b = bullets[i];
+
+        b.x += b.dx * b.speed;
+        b.y += b.dy * b.speed;
+
+        let remove = false;
+
+
+        /* 구조물 충돌 */
+
+        for (const o of obstacles) {
+
+            if (
+                b.x > o.x &&
+                b.x < o.x + o.w &&
+                b.y > o.y &&
+                b.y < o.y + o.h
+            ) {
+                remove = true;
+            }
+        }
+
+
+        /* 플레이어 충돌 */
+
+        for (const p of [p1, p2]) {
+
+            if (p !== b.owner) {
+
+                const dx = b.x - p.x;
+                const dy = b.y - p.y;
+
+                const distance =
+                    Math.sqrt(dx * dx + dy * dy);
+
+                if (distance < p.radius + b.radius) {
+
+                    p.hp -= b.damage;
+                    remove = true;
+
+                    if (p.hp <= 0) {
+
+                        p.hp = 0;
+                        gameOver = true;
+
+                        winner =
+                            b.owner.name + " WINS!";
+                    }
+                }
+            }
+        }
+
+
+        /* 맵 밖 */
+
+        if (
+            b.x < 0 ||
+            b.x > WORLD_W ||
+            b.y < 0 ||
+            b.y > WORLD_H
+        ) {
+            remove = true;
+        }
+
+        if (remove) {
+            bullets.splice(i, 1);
+        }
+    }
+}
+
+
+/* =========================
+   무기 획득
+========================= */
+
+function updateWeapons() {
+
+    for (const weapon of weapons) {
+
+        if (weapon.taken) continue;
+
+        for (const player of [p1, p2]) {
+
+            const dx = player.x - weapon.x;
+            const dy = player.y - weapon.y;
+
+            const distance =
+                Math.sqrt(dx * dx + dy * dy);
+
+            if (distance < 45) {
+
+                player.hasWeapon = true;
+                weapon.taken = true;
+            }
+        }
+    }
+}
+
+
+/* =========================
+   카메라
+========================= */
+
+function getCamera() {
+
+    const centerX = (p1.x + p2.x) / 2;
+    const centerY = (p1.y + p2.y) / 2;
+
+    let camX = centerX - W / 2;
+    let camY = centerY - H / 2;
+
+    camX = Math.max(
+        0,
+        Math.min(WORLD_W - W, camX)
+    );
+
+    camY = Math.max(
+        0,
+        Math.min(WORLD_H - H, camY)
+    );
+
+    return {
+        x: camX,
+        y: camY
+    };
+}
+
+
+/* =========================
+   구조물 그리기
+========================= */
+
+function drawObstacle(o, cam) {
+
+    const x = o.x - cam.x;
+    const y = o.y - cam.y;
+
+    if (o.type === "wall") {
+
+        ctx.fillStyle = "#c7b69e";
+        ctx.fillRect(x, y, o.w, o.h);
+
+        ctx.strokeStyle = "#555";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(x, y, o.w, o.h);
+    }
+
+
+    if (o.type === "crate") {
+
+        ctx.fillStyle = "#8b552d";
+        ctx.fillRect(x, y, o.w, o.h);
+
+        ctx.strokeStyle = "#553015";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(x, y, o.w, o.h);
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + o.w, y + o.h);
+
+        ctx.moveTo(x + o.w, y);
+        ctx.lineTo(x, y + o.h);
+
+        ctx.stroke();
+    }
+
+
+    if (o.type === "concrete") {
+
+        ctx.fillStyle = "#777";
+        ctx.fillRect(x, y, o.w, o.h);
+
+        ctx.strokeStyle = "#444";
+        ctx.lineWidth = 4;
+        ctx.strokeRect(x, y, o.w, o.h);
+
+        ctx.strokeStyle = "#666";
+
+        for (let bx = x; bx < x + o.w; bx += 35) {
+
+            ctx.beginPath();
+            ctx.moveTo(bx, y);
+            ctx.lineTo(bx, y + o.h);
+            ctx.stroke();
+        }
+    }
+
+
+    if (o.type === "car") {
+
+        ctx.fillStyle = "#bd3434";
+        ctx.fillRect(x, y, o.w, o.h);
+
+        ctx.fillStyle = "#7cc6e8";
+        ctx.fillRect(
+            x + 35,
+            y + 12,
+            o.w - 70,
+            25
+        );
+
+        ctx.fillStyle = "#111";
+
+        ctx.beginPath();
+        ctx.arc(x + 30, y + o.h, 13, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(
+            x + o.w - 30,
+            y + o.h,
+            13,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+    }
+
+
+    if (o.type === "tree") {
+
+        ctx.fillStyle = "#613b1c";
+
+        ctx.beginPath();
+        ctx.arc(
+            x + o.w / 2,
+            y + o.h / 2,
+            14,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+
+        ctx.fillStyle = "#2e7d32";
+
+        ctx.beginPath();
+        ctx.arc(
+            x + o.w / 2,
+            y + o.h / 2,
+            34,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+
+        ctx.fillStyle = "#48a848";
+
+        ctx.beginPath();
+        ctx.arc(
+            x + o.w / 2 - 10,
+            y + o.h / 2 - 10,
+            20,
+            0,
+            Math.PI * 2
+        );
+        ctx.fill();
+    }
+
+
+    if (o.type === "rock") {
+
+        ctx.fillStyle = "#888";
+
+        ctx.beginPath();
+        ctx.ellipse(
+            x + o.w / 2,
+            y + o.h / 2,
+            o.w / 2,
+            o.h / 2,
+            0,
+            0,
+            Math.PI * 2
+        );
+
+        ctx.fill();
+
+        ctx.strokeStyle = "#555";
+        ctx.stroke();
+    }
+
+
+    if (o.type === "drum") {
+
+        ctx.fillStyle = "#287ac2";
+        ctx.fillRect(x, y, o.w, o.h);
+
+        ctx.strokeStyle = "white";
+
+        ctx.beginPath();
+        ctx.moveTo(x, y + 12);
+        ctx.lineTo(x + o.w, y + 12);
+
+        ctx.moveTo(x, y + o.h - 12);
+        ctx.lineTo(x + o.w, y + o.h - 12);
+
+        ctx.stroke();
+    }
+}
+
+
+/* =========================
+   플레이어 그리기
+========================= */
+
+function drawPlayer(p, cam) {
+
+    const x = p.x - cam.x;
+    const y = p.y - cam.y;
+
+
+    /* 그림자 */
+
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+
+    ctx.beginPath();
+
+    ctx.ellipse(
+        x,
+        y + 15,
+        22,
+        10,
+        0,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+
+    /* 몸 */
+
+    ctx.fillStyle = p.color;
+
+    ctx.beginPath();
+    ctx.arc(x, y + 4, 22, 0, Math.PI * 2);
+    ctx.fill();
+
+
+    /* 머리 */
+
+    ctx.fillStyle = "#f0c99b";
+
+    ctx.beginPath();
+    ctx.arc(x, y - 15, 13, 0, Math.PI * 2);
+    ctx.fill();
+
+
+    /* 팔 + 총 */
+
+    ctx.strokeStyle = "#f0c99b";
+    ctx.lineWidth = 10;
+
+    ctx.beginPath();
+
+    ctx.moveTo(x, y);
+
+    ctx.lineTo(
+        x + p.aimX * 22,
+        y + p.aimY * 22
+    );
+
+    ctx.stroke();
+
+
+    if (p.hasWeapon) {
+
+        ctx.strokeStyle = "#222";
+        ctx.lineWidth = 8;
+
+        ctx.beginPath();
+
+        ctx.moveTo(
+            x + p.aimX * 15,
+            y + p.aimY * 15
+        );
+
+        ctx.lineTo(
+            x + p.aimX * 48,
+            y + p.aimY * 48
+        );
+
+        ctx.stroke();
+    }
+
+
+    /* HP 바 */
+
+    ctx.fillStyle = "#d33";
+
+    ctx.fillRect(
+        x - 32,
+        y - 52,
+        64,
+        8
+    );
+
+    ctx.fillStyle = "#39d353";
+
+    ctx.fillRect(
+        x - 32,
+        y - 52,
+        64 * (p.hp / 100),
+        8
+    );
+
+
+    /* 이름 */
+
+    ctx.fillStyle = "white";
+    ctx.font = "18px Arial";
+    ctx.textAlign = "center";
+
+    ctx.fillText(
+        p.name,
+        x,
+        y - 62
+    );
+}
+
+
+/* =========================
+   무기 그리기
+========================= */
+
+function drawWeapons(cam) {
+
+    for (const w of weapons) {
+
+        if (w.taken) continue;
+
+        const x = w.x - cam.x;
+        const y = w.y - cam.y;
+
+        ctx.fillStyle = "#f5c542";
+
+        ctx.beginPath();
+        ctx.arc(x, y, 25, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#111";
+
+        ctx.fillRect(
+            x - 8,
+            y - 10,
+            35,
+            10
+        );
+
+        ctx.fillRect(
+            x + 15,
+            y - 5,
+            12,
             20
-        )
-
-    elif kind == "rock":
-        pygame.draw.ellipse(surface, ROCK, rect)
-        pygame.draw.ellipse(surface, DARK_GRAY, rect, 3)
-
-    elif kind == "drum":
-        pygame.draw.rect(surface, (40, 120, 190), rect, border_radius=5)
-        pygame.draw.line(
-            surface,
-            WHITE,
-            (rect.x, rect.y + 12),
-            (rect.right, rect.y + 12),
-            3
-        )
-        pygame.draw.line(
-            surface,
-            WHITE,
-            (rect.x, rect.bottom - 12),
-            (rect.right, rect.bottom - 12),
-            3
-        )
+        );
+    }
+}
 
 
-# ==============================
-# 메인 게임 루프
-# ==============================
-running = True
-game_over = False
-winner = ""
+/* =========================
+   총알 그리기
+========================= */
 
-while running:
-    dt = clock.tick(60) / 1000
-    keys = pygame.key.get_pressed()
+function drawBullets(cam) {
 
-    # 이벤트
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
+    for (const b of bullets) {
 
-        if event.type == pygame.KEYDOWN:
-            if not game_over:
-                # P1 발사
-                if event.key == pygame.K_f:
-                    bullet = p1.shoot()
-                    if bullet:
-                        bullets.append(bullet)
+        ctx.fillStyle = "#ff9d00";
 
-                # P2 발사
-                if event.key == pygame.K_RETURN:
-                    bullet = p2.shoot()
-                    if bullet:
-                        bullets.append(bullet)
+        ctx.beginPath();
 
-            # 게임 재시작
-            if game_over and event.key == pygame.K_r:
-                p1.x, p1.y = 150, 150
-                p2.x, p2.y = 2200, 1400
+        ctx.arc(
+            b.x - cam.x,
+            b.y - cam.y,
+            b.radius,
+            0,
+            Math.PI * 2
+        );
 
-                p1.hp = 100
-                p2.hp = 100
+        ctx.fill();
+    }
+}
 
-                p1.has_weapon = False
-                p2.has_weapon = False
 
-                bullets.clear()
+/* =========================
+   UI
+========================= */
 
-                for weapon in weapon_spawns:
-                    weapon["taken"] = False
+function drawUI() {
 
-                game_over = False
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(0, 0, W, 55);
 
-    if not game_over:
-        # 플레이어 업데이트
-        p1.update(dt, keys, obstacles)
-        p2.update(dt, keys, obstacles)
+    ctx.fillStyle = "white";
+    ctx.font = "20px Arial";
+    ctx.textAlign = "left";
 
-        # 무기 획득
-        for weapon in weapon_spawns:
-            if not weapon["taken"]:
-                for player in players:
-                    distance = math.hypot(
-                        player.x - weapon["x"],
-                        player.y - weapon["y"]
-                    )
+    ctx.fillText(
+        "P1 HP: " + p1.hp +
+        (p1.hasWeapon ? "  🔫" : "  맨손"),
+        20,
+        35
+    );
 
-                    if distance < 40:
-                        player.has_weapon = True
-                        weapon["taken"] = True
+    ctx.textAlign = "right";
 
-        # 총알 업데이트
-        for bullet in bullets:
-            bullet.update(dt, obstacles, players)
+    ctx.fillText(
+        "P2 HP: " + p2.hp +
+        (p2.hasWeapon ? "  🔫" : "  맨손"),
+        W - 20,
+        35
+    );
 
-        bullets = [bullet for bullet in bullets if bullet.alive]
+    ctx.font = "15px Arial";
+    ctx.textAlign = "center";
 
-        # 승리 확인
-        if p1.hp <= 0:
-            game_over = True
-            winner = "PLAYER 2 WINS!"
+    ctx.fillText(
+        "P1: WASD 이동 / IJKL 조준 / F 발사     |     P2: 방향키 이동 / 숫자패드 8456 조준 / Enter 발사",
+        W / 2,
+        H - 20
+    );
+}
 
-        if p2.hp <= 0:
-            game_over = True
-            winner = "PLAYER 1 WINS!"
 
-    # ==============================
-    # 카메라: 두 플레이어 중간을 중심
-    # ==============================
-    center_x = (p1.x + p2.x) / 2
-    center_y = (p1.y + p2.y) / 2
+/* =========================
+   게임 종료
+========================= */
 
-    cam_x = center_x - SCREEN_W / 2
-    cam_y = center_y - SCREEN_H / 2
+function drawGameOver() {
 
-    cam_x = max(0, min(WORLD_W - SCREEN_W, cam_x))
-    cam_y = max(0, min(WORLD_H - SCREEN_H, cam_y))
+    if (!gameOver) return;
 
-    # ==============================
-    # 화면 그리기
-    # ==============================
-    screen.fill(GRASS)
+    ctx.fillStyle = "rgba(0,0,0,0.7)";
+    ctx.fillRect(0, 0, W, H);
 
-    # 도로
-    road_y = 760 - cam_y
-    pygame.draw.rect(
-        screen,
-        ROAD,
-        (0, road_y, SCREEN_W, 180)
-    )
+    ctx.fillStyle = "white";
+    ctx.textAlign = "center";
 
-    # 도로 중앙선
-    for x in range(-int(cam_x) % 80, SCREEN_W, 80):
-        pygame.draw.rect(
-            screen,
-            (220, 220, 180),
-            (x, road_y + 85, 40, 8)
-        )
+    ctx.font = "60px Arial";
 
-    # 구조물
-    for obstacle in obstacles:
-        draw_obstacle(screen, obstacle, cam_x, cam_y)
+    ctx.fillText(
+        winner,
+        W / 2,
+        H / 2 - 30
+    );
 
-    # 무기
-    for weapon in weapon_spawns:
-        if not weapon["taken"]:
-            x = int(weapon["x"] - cam_x)
-            y = int(weapon["y"] - cam_y)
+    ctx.font = "28px Arial";
 
-            pygame.draw.circle(screen, (255, 220, 80), (x, y), 25)
-            pygame.draw.rect(
-                screen,
-                BLACK,
-                (x - 5, y - 12, 30, 10)
-            )
-            pygame.draw.rect(
-                screen,
-                DARK_GRAY,
-                (x + 15, y - 8, 15, 18)
-            )
+    ctx.fillText(
+        "R 키를 눌러 다시 시작",
+        W / 2,
+        H / 2 + 40
+    );
+}
 
-    # 총알
-    for bullet in bullets:
-        bullet.draw(screen, cam_x, cam_y)
 
-    # 플레이어
-    p1.draw(screen, cam_x, cam_y)
-    p2.draw(screen, cam_x, cam_y)
+/* =========================
+   게임 재시작
+========================= */
 
-    # 화면 상단 HP
-    p1_text = FONT.render(
-        f"P1 HP: {max(0, p1.hp)} {'[GUN]' if p1.has_weapon else '[NO GUN]'}",
-        True,
-        WHITE
-    )
+function restartGame() {
 
-    p2_text = FONT.render(
-        f"P2 HP: {max(0, p2.hp)} {'[GUN]' if p2.has_weapon else '[NO GUN]'}",
-        True,
-        WHITE
-    )
+    p1 = createPlayer(
+        150,
+        150,
+        "#f5d52a",
+        "P1"
+    );
 
-    screen.blit(p1_text, (20, 20))
-    screen.blit(
-        p2_text,
-        (SCREEN_W - p2_text.get_width() - 20, 20)
-    )
+    p2 = createPlayer(
+        2200,
+        1400,
+        "#3d8cff",
+        "P2"
+    );
 
-    # 조작법
-    help_text = FONT.render(
-        "P1: WASD Move / IJKL Aim / F Shoot     |     "
-        "P2: Arrow Move / Numpad 8456 Aim / Enter Shoot",
-        True,
-        WHITE
-    )
+    bullets = [];
 
-    screen.blit(
-        help_text,
-        (
-            SCREEN_W // 2 - help_text.get_width() // 2,
-            SCREEN_H - 35
-        )
-    )
+    weapons = [
+        {x: 800, y: 850, taken: false},
+        {x: 1200, y: 500, taken: false},
+        {x: 1700, y: 700, taken: false}
+    ];
 
-    # 게임 종료 화면
-    if game_over:
-        overlay = pygame.Surface(
-            (SCREEN_W, SCREEN_H),
-            pygame.SRCALPHA
-        )
-        overlay.fill((0, 0, 0, 170))
-        screen.blit(overlay, (0, 0))
+    gameOver = false;
+    winner = "";
+}
 
-        win_text = BIG_FONT.render(winner, True, WHITE)
-        restart_text = FONT.render(
-            "Press R to Restart",
-            True,
-            WHITE
-        )
 
-        screen.blit(
-            win_text,
-            (
-                SCREEN_W // 2 - win_text.get_width() // 2,
-                SCREEN_H // 2 - 50
-            )
-        )
+/* =========================
+   메인 게임 루프
+========================= */
 
-        screen.blit(
-            restart_text,
-            (
-                SCREEN_W // 2 - restart_text.get_width() // 2,
-                SCREEN_H // 2 + 30
-            )
-        )
+function gameLoop() {
 
-    pygame.display.flip()
+    if (!gameOver) {
 
-pygame.quit()
+        updatePlayer(p1, {
+            up: "w",
+            down: "s",
+            left: "a",
+            right: "d",
+
+            aimUp: "i",
+            aimDown: "k",
+            aimLeft: "j",
+            aimRight: "l"
+        });
+
+
+        updatePlayer(p2, {
+            up: "ArrowUp",
+            down: "ArrowDown",
+            left: "ArrowLeft",
+            right: "ArrowRight",
+
+            aimUp: "8",
+            aimDown: "5",
+            aimLeft: "4",
+            aimRight: "6"
+        });
+
+
+        updateWeapons();
+        updateBullets();
+    }
+
+
+    const cam = getCamera();
+
+
+    /* 배경 */
+
+    ctx.fillStyle = "#4f913f";
+    ctx.fillRect(0, 0, W, H);
+
+
+    /* 도로 */
+
+    const roadY = 760 - cam.y;
+
+    ctx.fillStyle = "#606060";
+
+    ctx.fillRect(
+        0,
+        roadY,
+        W,
+        180
+    );
+
+
+    /* 도로 중앙선 */
+
+    ctx.fillStyle = "#e5e0b5";
+
+    for (
+        let x = -cam.x % 80;
+        x < W;
+        x += 80
+    ) {
+
+        ctx.fillRect(
+            x,
+            roadY + 85,
+            40,
+            8
+        );
+    }
+
+
+    /* 구조물 */
+
+    for (const o of obstacles) {
+        drawObstacle(o, cam);
+    }
+
+
+    drawWeapons(cam);
+    drawBullets(cam);
+
+    drawPlayer(p1, cam);
+    drawPlayer(p2, cam);
+
+    drawUI();
+    drawGameOver();
+
+    requestAnimationFrame(gameLoop);
+}
+
+
+gameLoop();
+
+</script>
+</body>
+</html>
+"""
+
+components.html(
+    game_html,
+    height=780,
+    scrolling=False
+)
